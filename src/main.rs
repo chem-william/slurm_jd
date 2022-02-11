@@ -48,23 +48,6 @@ impl PartialEq for Job {
     }
 }
 impl Eq for Job {}
-// impl Job {
-//     fn new() -> Job {
-//         let tmp_datetime = NaiveDateTime::new(
-//             NaiveDate::from_ymd(2000, 1, 1),
-//             NaiveTime::from_hms_milli(0, 0, 0, 0),
-//         );
-//         Job {
-//             jobid: 00000000,
-//             jobname: "default".to_string(),
-//             alloccpus: 0,
-//             elapsed: "".to_string(),
-//             start: tmp_datetime,
-//             end: tmp_datetime,
-//             state: "default".to_string(),
-//         }
-//     }
-// }
 
 fn parse_job(lines: &[&str], date_format: &str) -> Job {
     Job {
