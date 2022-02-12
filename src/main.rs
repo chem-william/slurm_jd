@@ -57,7 +57,14 @@ fn parse_job(lines: &[&str], date_format: &str) -> Job {
             .parse::<usize>()
             .expect("could not parse alloccpus"),
         elapsed: lines[3].to_string(),
-        start: NaiveDateTime::parse_from_str(lines[4], date_format).expect("unable to parse start"),
+        start: match lines[4] {
+            // placeholder value due to the job is not yet started
+            "Unknown" => NaiveDateTime::new(
+                NaiveDate::from_ymd(2000, 1, 1),
+                NaiveTime::from_hms_milli(0, 0, 0, 0),
+            ),
+            _ => NaiveDateTime::parse_from_str(lines[4], date_format).expect("unable to parse start"),
+        },
         end: match lines[5] {
             // placeholder value due to the job being unfinished
             "Unknown" => NaiveDateTime::new(
