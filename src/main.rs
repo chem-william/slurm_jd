@@ -49,31 +49,33 @@ impl PartialEq for Job {
 }
 impl Eq for Job {}
 
-fn parse_job(lines: &[&str], date_format: &str) -> Job {
-    Job {
-        jobid: lines[0].parse::<usize>().expect("could not parse jobid"),
-        jobname: lines[1].to_string(),
-        alloccpus: lines[2]
-            .parse::<usize>()
-            .expect("could not parse alloccpus"),
-        elapsed: lines[3].to_string(),
-        start: match lines[4] {
-            // placeholder value due to the job is not yet started
-            "Unknown" => NaiveDateTime::new(
-                NaiveDate::from_ymd(2000, 1, 1),
-                NaiveTime::from_hms_milli(0, 0, 0, 0),
-            ),
-            _ => NaiveDateTime::parse_from_str(lines[4], date_format).expect("unable to parse start"),
-        },
-        end: match lines[5] {
-            // placeholder value due to the job being unfinished
-            "Unknown" => NaiveDateTime::new(
-                NaiveDate::from_ymd(2000, 1, 1),
-                NaiveTime::from_hms_milli(0, 0, 0, 0),
-            ),
-            _ => NaiveDateTime::parse_from_str(lines[5], date_format).expect("unable to parse end"),
-        },
-        state: lines[6].to_string(),
+impl Job {
+    fn parse_job(lines: &[&str], date_format: &str) -> Self {
+        Job {
+            jobid: lines[0].parse::<usize>().expect("could not parse jobid"),
+            jobname: lines[1].to_string(),
+            alloccpus: lines[2]
+                .parse::<usize>()
+                .expect("could not parse alloccpus"),
+            elapsed: lines[3].to_string(),
+            start: match lines[4] {
+                // placeholder value due to the job is not yet started
+                "Unknown" => NaiveDateTime::new(
+                    NaiveDate::from_ymd(2000, 1, 1),
+                    NaiveTime::from_hms_milli(0, 0, 0, 0),
+                ),
+                _ => NaiveDateTime::parse_from_str(lines[4], date_format).expect("unable to parse start"),
+            },
+            end: match lines[5] {
+                // placeholder value due to the job being unfinished
+                "Unknown" => NaiveDateTime::new(
+                    NaiveDate::from_ymd(2000, 1, 1),
+                    NaiveTime::from_hms_milli(0, 0, 0, 0),
+                ),
+                _ => NaiveDateTime::parse_from_str(lines[5], date_format).expect("unable to parse end"),
+            },
+            state: lines[6].to_string(),
+        }
     }
 }
 
@@ -96,7 +98,7 @@ fn check_previous_jobs(log_file: &PathBuf) -> Option<Vec<Job>> {
         None => None,
         Some(reader) => {
             for line in reader.lines() {
-                jobs.push(parse_job(
+                jobs.push(Job::parse_job(
                     &line.unwrap().split(';').collect::<Vec<_>>(),
                     LOG_DATE_FORMAT,
                 ));
@@ -138,7 +140,7 @@ fn get_finished_jobs(sacct_output: String) -> Vec<Job> {
 
             // some jobs have .x - skip those
             if tmp_job[0].parse::<usize>().is_ok() {
-                let job = parse_job(&tmp_job, INPUT_DATE_FORMAT);
+                let job = Job::parse_job(&tmp_job, INPUT_DATE_FORMAT);
 
                 // Don't bother with jobs that are still running
                 if job.state != "RUNNING" {
