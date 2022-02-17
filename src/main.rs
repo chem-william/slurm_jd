@@ -64,7 +64,8 @@ impl Job {
                     NaiveDate::from_ymd(2000, 1, 1),
                     NaiveTime::from_hms_milli(0, 0, 0, 0),
                 ),
-                _ => NaiveDateTime::parse_from_str(lines[4], date_format).expect("unable to parse start"),
+                _ => NaiveDateTime::parse_from_str(lines[4], date_format)
+                    .expect("unable to parse start"),
             },
             end: match lines[5] {
                 // placeholder value due to the job being unfinished
@@ -72,7 +73,8 @@ impl Job {
                     NaiveDate::from_ymd(2000, 1, 1),
                     NaiveTime::from_hms_milli(0, 0, 0, 0),
                 ),
-                _ => NaiveDateTime::parse_from_str(lines[5], date_format).expect("unable to parse end"),
+                _ => NaiveDateTime::parse_from_str(lines[5], date_format)
+                    .expect("unable to parse end"),
             },
             state: lines[6].to_string(),
         }
