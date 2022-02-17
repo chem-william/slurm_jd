@@ -4,7 +4,6 @@ use colored::Colorize;
 use std::fs;
 use std::fs::File;
 use std::io::prelude::*;
-use std::io::BufReader;
 use std::path::PathBuf;
 use std::process::Command;
 use std::str;
@@ -81,35 +80,6 @@ impl Job {
     }
 }
 
-fn check_previous_jobs(log_file: &PathBuf) -> Option<Vec<Job>> {
-    let mut jobs: Vec<Job> = Vec::new();
-
-    let reader = if log_file.exists() {
-        let file = File::open(log_file).expect("unable to read log file");
-        Some(BufReader::new(file))
-    } else {
-        let now: NaiveDateTime = Local::now().naive_local();
-
-        let mut file = File::create(log_file).expect("Unable to create new prev_job");
-        write!(file, "00000000;{}", now.format(LOG_DATE_FORMAT))
-            .expect("Unable to write to prev_job");
-        None
-    };
-
-    match reader {
-        None => None,
-        Some(reader) => {
-            for line in reader.lines() {
-                jobs.push(Job::parse_job(
-                    &line.unwrap().split(';').collect::<Vec<_>>(),
-                    LOG_DATE_FORMAT,
-                ));
-            }
-            Some(jobs)
-        }
-    }
-}
-
 fn convert_to_string(input_bytes: Vec<u8>) -> String {
     match String::from_utf8(input_bytes) {
         Ok(v) => v,
@@ -151,23 +121,17 @@ fn get_finished_jobs(sacct_output: String) -> Vec<Job> {
             }
         }
     }
+
+    // skip the first job as it's erroneously reported by SLURM
+    // jobs.into_iter().skip(1).collect()
     jobs
 }
 
-fn create_print(jobs: &Vec<Job>, prev_jobs: &Option<Vec<Job>>, day: bool) -> Vec<String> {
+fn create_print(jobs: &Vec<Job>) -> Vec<String> {
     let mut job_messages: Vec<_> = Vec::with_capacity(32);
     let skip_states = ["PENDING", "Unkown", "CANCELLED+"];
     for job in jobs {
-        let process_job = if day {
-            true
-        } else {
-            match prev_jobs {
-                None => true,
-                Some(prev_jobs) => !prev_jobs.iter().any(|x| x == job),
-            }
-        };
-
-        if process_job && !skip_states.iter().any(|&x| job.state == x) {
+        if !skip_states.iter().any(|&x| job.state == x) {
             let jobid = job.jobid;
             let jobname = &job.jobname;
             let alloccpus = job.alloccpus;
@@ -245,7 +209,6 @@ fn main() {
     let last_session = get_last_session(&date_file);
     let formatted_last_session = last_session.format(START_END_FORMAT).to_string().yellow();
 
-    let prev_jobs = check_previous_jobs(&log_file);
     let sacct_output = if args.day {
         call_sacct(FORMAT_CMD, "00:00")
     } else {
@@ -256,7 +219,7 @@ fn main() {
     };
     let jobs = get_finished_jobs(sacct_output);
 
-    let job_messages = create_print(&jobs, &prev_jobs, args.day);
+    let job_messages = create_print(&jobs);
 
     if !job_messages.is_empty() {
         if args.day {
