@@ -215,8 +215,16 @@ fn save_date(date_file: PathBuf) {
 fn get_last_session(date_file: &PathBuf) -> NaiveDateTime {
     if date_file.exists() {
         let contents = fs::read_to_string(date_file).expect("unable to read date file");
-        NaiveDateTime::parse_from_str(&contents, LOG_DATE_FORMAT)
-            .expect("unable to parse date from date_file")
+        if contents.is_empty() {
+            let mut file = File::create(date_file).expect("Unable to create new prev_job");
+            let now = Local::now().naive_local();
+            write!(file, "{}", now.format(LOG_DATE_FORMAT))
+                .expect("unable to write date to empty date_file");
+            now
+        } else {
+            NaiveDateTime::parse_from_str(&contents, LOG_DATE_FORMAT)
+                .expect("unable to parse date from date_file")
+        }
     } else {
         let now = Local::now().naive_local();
         NaiveDateTime::new(now.date(), NaiveTime::from_hms_milli(0, 0, 0, 0))
