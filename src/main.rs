@@ -58,10 +58,10 @@ impl Job {
                 .expect("could not parse alloccpus"),
             elapsed: lines[3].to_string(),
             start: match lines[4] {
-                // placeholder value due to the job is not yet started
+                // placeholder value as the job is not yet started
                 "Unknown" => NaiveDateTime::new(
-                    NaiveDate::from_ymd(2000, 1, 1),
-                    NaiveTime::from_hms_milli(0, 0, 0, 0),
+                    NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(),
+                    NaiveTime::from_hms_milli_opt(0, 0, 0, 0).unwrap(),
                 ),
                 _ => NaiveDateTime::parse_from_str(lines[4], date_format)
                     .expect("unable to parse start"),
@@ -69,8 +69,8 @@ impl Job {
             end: match lines[5] {
                 // placeholder value due to the job being unfinished
                 "Unknown" => NaiveDateTime::new(
-                    NaiveDate::from_ymd(2000, 1, 1),
-                    NaiveTime::from_hms_milli(0, 0, 0, 0),
+                    NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(),
+                    NaiveTime::from_hms_milli_opt(0, 0, 0, 0).unwrap(),
                 ),
                 _ => NaiveDateTime::parse_from_str(lines[5], date_format)
                     .expect("unable to parse end"),
@@ -191,7 +191,7 @@ fn get_last_session(date_file: &PathBuf) -> NaiveDateTime {
         }
     } else {
         let now = Local::now().naive_local();
-        NaiveDateTime::new(now.date(), NaiveTime::from_hms_milli(0, 0, 0, 0))
+        NaiveDateTime::new(now.date(), NaiveTime::from_hms_milli_opt(0, 0, 0, 0).unwrap())
     }
 }
 
