@@ -58,8 +58,8 @@ impl Job {
                 .expect("could not parse alloccpus"),
             elapsed: lines[3].to_string(),
             start: match lines[4] {
-                // placeholder value as the job is not yet started
-                "Unknown" => NaiveDateTime::new(
+                // placeholder value as the job is not yet (UNKNOWN)/was never (NONE) started
+                "Unknown" | "None" => NaiveDateTime::new(
                     NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(),
                     NaiveTime::from_hms_milli_opt(0, 0, 0, 0).unwrap(),
                 ),
