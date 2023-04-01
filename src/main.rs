@@ -106,7 +106,7 @@ fn get_finished_jobs(sacct_output: String) -> Vec<Job> {
     let split_output: Vec<_> = sacct_output.split_whitespace().collect();
 
     for (idx, line) in split_output.iter().enumerate() {
-        if line.parse::<f64>().is_ok() && line.len() > 3 {
+        if line.parse::<f64>().is_ok() && line.len() > 7 {
             let mut tmp_job: [&str; N_CMDS] = [""; N_CMDS];
             tmp_job[..N_CMDS].copy_from_slice(&split_output[idx..(N_CMDS + idx)]);
 
