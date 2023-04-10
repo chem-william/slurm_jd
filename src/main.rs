@@ -188,7 +188,10 @@ fn get_last_session(date_file: &PathBuf) -> NaiveDateTime {
         }
     } else {
         let now = Local::now().naive_local();
-        NaiveDateTime::new(now.date(), NaiveTime::from_hms_milli_opt(0, 0, 0, 0).unwrap())
+        NaiveDateTime::new(
+            now.date(),
+            NaiveTime::from_hms_milli_opt(0, 0, 0, 0).unwrap(),
+        )
     }
 }
 
