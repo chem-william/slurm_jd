@@ -198,11 +198,11 @@ fn get_last_session(date_file: &PathBuf) -> NaiveDateTime {
 fn main() {
     let args = Args::parse();
 
-    let mut log_file = std::env::current_exe().unwrap();
+    let mut log_file = std::env::current_exe().expect("could not acquire log file");
     log_file.pop();
     log_file.push("log_file");
 
-    let mut date_file = std::env::current_exe().unwrap();
+    let mut date_file = std::env::current_exe().expect("could not acquire date file");
     date_file.pop();
     date_file.push("date_file");
 
