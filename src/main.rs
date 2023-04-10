@@ -81,10 +81,7 @@ impl Job {
 }
 
 fn convert_to_string(input_bytes: Vec<u8>) -> String {
-    match String::from_utf8(input_bytes) {
-        Ok(v) => v,
-        Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-    }
+    String::from_utf8(input_bytes).unwrap_or_else(|e| panic!("Invalid UTF-8 sequence: {}", e))
 }
 
 fn call_sacct(format_cmd: [&str; 7], last_session: &str) -> String {
