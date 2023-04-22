@@ -25,7 +25,7 @@ const N_CMDS: usize = FORMAT_CMD.len();
 const WIDTH: usize = 24;
 
 #[non_exhaustive]
-#[derive(PartialEq,Debug)]
+#[derive(PartialEq, Debug)]
 pub enum JobType {
     SingularJob,
     ArrayJob,
