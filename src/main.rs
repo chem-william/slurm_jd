@@ -298,3 +298,29 @@ fn main() {
     log_jobs(jobs, log_file);
     save_date(date_file);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    macro_rules! jobtypes_tests {
+        ($($name:ident: $value:expr,)*) => {
+        $(
+            #[test]
+            fn $name() {
+                let (input, expected) = $value;
+                assert_eq!(expected, check_job(input, JOBID_LENGTH));
+            }
+    )*
+        }
+    }
+    jobtypes_tests! {
+        check_job0: ("39122024_15+", JobType::NotJob),
+        check_job1: ("39122024_3.1", JobType::NotJob),
+        check_job2: ("39122024.1", JobType::NotJob),
+        check_job3: ("39122024.1+", JobType::NotJob),
+        check_job4: ("39122024_16+", JobType::NotJob),
+        check_job5: ("39122024_16", JobType::ArrayJob),
+        check_job6: ("39122024", JobType::SingularJob),
+    }
+}
