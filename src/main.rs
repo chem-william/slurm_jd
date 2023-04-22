@@ -323,4 +323,37 @@ mod tests {
         check_job5: ("39122024_16", JobType::ArrayJob),
         check_job6: ("39122024", JobType::SingularJob),
     }
+
+    macro_rules! parse_job_tests {
+        ($($name:ident: $value:expr,)*) => {
+        $(
+            #[test]
+            fn $name() {
+                let (input, expected) = $value;
+                let job = Job::parse_job(&input, INPUT_DATE_FORMAT);
+                assert_eq!(expected.jobid, job.jobid);
+                assert_eq!(expected.jobname, job.jobname);
+                assert_eq!(expected.alloccpus, job.alloccpus);
+                assert_eq!(expected.elapsed, job.elapsed);
+                assert_eq!(expected.start, job.start);
+                assert_eq!(expected.end, job.end);
+                assert_eq!(expected.state, job.state);
+            }
+    )*
+        }
+    }
+    parse_job_tests! {
+        parse_job0: (
+            ["39139726", "1e-2", "84", "00:08:58", "2023-04-22T16:15:05", "2023-04-22T16:24:03", "COMPLETED"],
+            Job{
+                jobid: 39139726,
+                jobname: "1e-2".to_string(),
+                alloccpus: 84,
+                elapsed: "00:08:58".to_string(),
+                start: NaiveDateTime::parse_from_str("2023-04-22T16:15:05", INPUT_DATE_FORMAT).unwrap(),
+                end: NaiveDateTime::parse_from_str("2023-04-22T16:24:03", INPUT_DATE_FORMAT).unwrap(),
+                state: "COMPLETED".to_string()
+            }
+        ),
+    }
 }
