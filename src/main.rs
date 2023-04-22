@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::str;
 
+const JOBID_LENGTH: usize = 7;
 const INPUT_DATE_FORMAT: &str = "%Y-%m-%dT%H:%M:%S";
 const LOG_DATE_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
 const START_END_FORMAT: &str = "%b-%d %H:%M";
@@ -22,6 +23,14 @@ const FORMAT_CMD: [&str; 7] = [
 ];
 const N_CMDS: usize = FORMAT_CMD.len();
 const WIDTH: usize = 24;
+
+#[non_exhaustive]
+#[derive(PartialEq,Debug)]
+pub enum JobType {
+    SingularJob,
+    ArrayJob,
+    NotJob,
+}
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
@@ -98,25 +107,52 @@ fn call_sacct(format_cmd: [&str; 7], last_session: &str) -> String {
     }
 }
 
+fn check_job(line: &str, jobid_length: usize) -> JobType {
+    match line {
+        l if l.len() <= jobid_length => JobType::NotJob,
+        l if l.contains('_') && l.split('_').next().unwrap_or("").parse::<usize>().is_err() => {
+            JobType::NotJob
+        }
+        l if l.contains('_') && l.split('_').all(|s| s.parse::<usize>().is_ok()) => {
+            JobType::ArrayJob
+        }
+        l if l.parse::<usize>().is_ok() => JobType::SingularJob,
+        _ => JobType::NotJob,
+    }
+}
+
+fn gather_jobinfo<'a>(split_output: &'a [&'a str]) -> [&'a str; N_CMDS] {
+    let mut tmp_job: [&str; N_CMDS] = [""; N_CMDS];
+    tmp_job[..N_CMDS].copy_from_slice(split_output);
+
+    tmp_job
+}
+
 fn get_finished_jobs(sacct_output: String) -> Vec<Job> {
     let mut jobs: Vec<Job> = Vec::new();
     let split_output: Vec<_> = sacct_output.split_whitespace().collect();
 
     for (idx, line) in split_output.iter().enumerate() {
-        if line.parse::<f64>().is_ok() && line.len() > 7 {
-            let mut tmp_job: [&str; N_CMDS] = [""; N_CMDS];
-            tmp_job[..N_CMDS].copy_from_slice(&split_output[idx..(N_CMDS + idx)]);
-
-            // some jobs have .x - skip those
-            if tmp_job[0].parse::<usize>().is_ok() {
+        let job_type = check_job(line, JOBID_LENGTH);
+        match job_type {
+            JobType::SingularJob => {
+                let tmp_job = gather_jobinfo(&split_output[idx..(N_CMDS + idx)]);
                 let job = Job::parse_job(&tmp_job, INPUT_DATE_FORMAT);
-
-                // Don't bother with jobs that are still running
                 if job.state != "RUNNING" {
                     jobs.push(job)
                 }
             }
-        }
+            JobType::ArrayJob => {
+                let mut tmp_job = gather_jobinfo(&split_output[idx..(N_CMDS + idx)]);
+                tmp_job[0] = tmp_job[0].split('_').next().unwrap();
+                let job = Job::parse_job(&tmp_job, INPUT_DATE_FORMAT);
+
+                if job.state != "RUNNING" {
+                    jobs.push(job)
+                }
+            }
+            JobType::NotJob => continue,
+        };
     }
 
     // skip the first job as it's erroneously reported by SLURM
