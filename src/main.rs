@@ -1,8 +1,10 @@
+use anyhow::{Context, Result};
 use chrono::prelude::*;
 use clap::Parser;
 use colored::Colorize;
 use std::fs;
 use std::fs::File;
+use std::fs::OpenOptions;
 use std::io::prelude::*;
 use std::path::PathBuf;
 use std::process::Command;
@@ -38,6 +40,10 @@ struct Args {
     /// Get finished jobs from the last 24h
     #[clap(long)]
     day: bool,
+
+    /// SLURM username
+    #[clap(short, long, default_value = "williamb")]
+    user: String,
 }
 
 #[derive(Debug)]
@@ -93,9 +99,9 @@ fn convert_to_string(input_bytes: Vec<u8>) -> String {
     String::from_utf8(input_bytes).unwrap_or_else(|e| panic!("Invalid UTF-8 sequence: {}", e))
 }
 
-fn call_sacct(format_cmd: [&str; 7], last_session: &str) -> String {
+fn call_sacct(format_cmd: [&str; 7], last_session: &str, user: &str) -> String {
     let output = Command::new("sacct")
-        .args(["-u", "williamb", "-n", "-S", last_session])
+        .args(["-u", user, "-n", "-S", last_session])
         .arg(format!("--format={}", format_cmd.join(",")))
         .output()
         .expect("failed to execute process");
@@ -187,18 +193,21 @@ fn create_print(jobs: &Vec<Job>) -> Vec<String> {
     job_messages
 }
 
-fn log_jobs(jobs: Vec<Job>, log_file: PathBuf) {
-    let mut fd = File::create(&log_file).expect("unable to open log_file");
-    if log_file.exists() {
-        for job in jobs {
-            writeln!(
-                fd,
-                "{};{};{};{};{};{};{}",
-                job.jobid, job.jobname, job.alloccpus, job.elapsed, job.start, job.end, job.state
-            )
-            .expect("unable to write to log_file");
-        }
+fn log_jobs(jobs: Vec<Job>, log_file: PathBuf) -> Result<()> {
+    // let mut fd = File::create(&log_file).expect("unable to open log_file");
+    let mut fd = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_file)
+        .context("Failed to open log file")?;
+    for job in jobs {
+        writeln!(
+            fd,
+            "{};{};{};{};{};{};{}",
+            job.jobid, job.jobname, job.alloccpus, job.elapsed, job.start, job.end, job.state
+        )?;
     }
+    Ok(())
 }
 
 fn save_date(date_file: PathBuf) {
@@ -246,11 +255,12 @@ fn main() {
     let formatted_last_session = last_session.format(START_END_FORMAT).to_string().yellow();
 
     let sacct_output = if args.day {
-        call_sacct(FORMAT_CMD, "00:00")
+        call_sacct(FORMAT_CMD, "00:00", &args.user)
     } else {
         call_sacct(
             FORMAT_CMD,
             &last_session.format(INPUT_DATE_FORMAT).to_string(),
+            &args.user,
         )
     };
     let jobs = get_finished_jobs(sacct_output);
@@ -295,7 +305,7 @@ fn main() {
         );
     }
 
-    log_jobs(jobs, log_file);
+    log_jobs(jobs, log_file).unwrap();
     save_date(date_file);
 }
 
