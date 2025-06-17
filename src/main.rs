@@ -52,8 +52,8 @@ struct Job {
     jobname: String,
     alloccpus: usize,
     elapsed: String,
-    start: NaiveDateTime,
-    end: NaiveDateTime,
+    start: Option<NaiveDateTime>,
+    end: Option<NaiveDateTime>,
     state: String,
 }
 impl PartialEq for Job {
@@ -74,21 +74,19 @@ impl Job {
             elapsed: lines[3].to_string(),
             start: match lines[4] {
                 // placeholder value as the job is not yet (UNKNOWN)/was never (NONE) started
-                "Unknown" | "None" => NaiveDateTime::new(
-                    NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(),
-                    NaiveTime::from_hms_milli_opt(0, 0, 0, 0).unwrap(),
+                "Unknown" | "None" => None,
+                _ => Some(
+                    NaiveDateTime::parse_from_str(lines[4], date_format)
+                        .expect("unable to parse start"),
                 ),
-                _ => NaiveDateTime::parse_from_str(lines[4], date_format)
-                    .expect("unable to parse start"),
             },
             end: match lines[5] {
                 // placeholder value due to the job being unfinished
-                "Unknown" => NaiveDateTime::new(
-                    NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(),
-                    NaiveTime::from_hms_milli_opt(0, 0, 0, 0).unwrap(),
+                "Unknown" => None,
+                _ => Some(
+                    NaiveDateTime::parse_from_str(lines[5], date_format)
+                        .expect("unable to parse end"),
                 ),
-                _ => NaiveDateTime::parse_from_str(lines[5], date_format)
-                    .expect("unable to parse end"),
             },
             state: lines[6].to_string(),
         }
@@ -168,15 +166,23 @@ fn get_finished_jobs(sacct_output: String) -> Vec<Job> {
 
 fn create_print(jobs: &Vec<Job>) -> Vec<String> {
     let mut job_messages: Vec<_> = Vec::with_capacity(32);
-    let skip_states = ["PENDING", "Unkown", "CANCELLED+"];
+    let skip_states = ["PENDING", "CANCELLED+"];
     for job in jobs {
         if !skip_states.iter().any(|&x| job.state == x) {
             let jobid = job.jobid;
             let jobname = &job.jobname;
             let alloccpus = job.alloccpus;
             let elapsed = &job.elapsed;
-            let start = job.start.format(START_END_FORMAT);
-            let end = job.end.format(START_END_FORMAT);
+            let start = if let Some(job_start) = job.start {
+                job_start.format(START_END_FORMAT).to_string().white()
+            } else {
+                "NOT STARTED".yellow()
+            };
+            let end = if let Some(job_end) = job.end {
+                job_end.format(START_END_FORMAT).to_string().white()
+            } else {
+                "UNKNOWN".yellow()
+            };
             let state = if job.state == "COMPLETED" {
                 job.state.green()
             } else {
@@ -203,7 +209,7 @@ fn log_jobs(jobs: Vec<Job>, log_file: PathBuf) -> Result<()> {
     for job in jobs {
         writeln!(
             fd,
-            "{};{};{};{};{};{};{}",
+            "{};{};{};{};{:?};{:?};{}",
             job.jobid, job.jobname, job.alloccpus, job.elapsed, job.start, job.end, job.state
         )?;
     }
@@ -360,9 +366,21 @@ mod tests {
                 jobname: "1e-2".to_string(),
                 alloccpus: 84,
                 elapsed: "00:08:58".to_string(),
-                start: NaiveDateTime::parse_from_str("2023-04-22T16:15:05", INPUT_DATE_FORMAT).unwrap(),
-                end: NaiveDateTime::parse_from_str("2023-04-22T16:24:03", INPUT_DATE_FORMAT).unwrap(),
+                start: Some(NaiveDateTime::parse_from_str("2023-04-22T16:15:05", INPUT_DATE_FORMAT).unwrap()),
+                end: Some(NaiveDateTime::parse_from_str("2023-04-22T16:24:03", INPUT_DATE_FORMAT).unwrap()),
                 state: "COMPLETED".to_string()
+            }
+        ),
+        parse_job1: (
+            ["50280159", "MultiprocessDistances", "4", "20:27:32", "2025-03-19T19:32:54", "Unknown", "FAILED"],
+            Job{
+                jobid: 50280159,
+                jobname: "MultiprocessDistances".to_string(),
+                alloccpus: 4,
+                elapsed: "20:27:32".to_string(),
+                start: Some(NaiveDateTime::parse_from_str("2025-03-19T19:32:54", INPUT_DATE_FORMAT).unwrap()),
+                end: None,
+                state: "FAILED".to_string()
             }
         ),
     }
