@@ -9,4 +9,4 @@ edition = "2021"
 chrono = "0.4.42"
 colored = "3.0.0"
 anyhow = "1.0.100"
-clap = { version = "4.5.53", features = ["derive"] }
+clap = { version = "4.5.54", features = ["derive"] }
