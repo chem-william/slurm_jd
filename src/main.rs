@@ -111,9 +111,15 @@ fn convert_to_string(input_bytes: Vec<u8>) -> String {
     String::from_utf8(input_bytes).unwrap_or_else(|e| panic!("Invalid UTF-8 sequence: {}", e))
 }
 
-fn call_sacct(format_cmd: [&str; 7], last_session: &str, user: &str) -> String {
+fn call_sacct(format_cmd: [&str; 7], window_start: NaiveDateTime, user: &str) -> String {
     let output = Command::new("sacct")
-        .args(["-u", user, "-n", "-S", last_session])
+        .args([
+            "-u",
+            user,
+            "-n",
+            "-S",
+            &window_start.format(INPUT_DATE_FORMAT).to_string(),
+        ])
         .arg(format!("--format={}", format_cmd.join(",")))
         .output()
         .expect("failed to execute process");
@@ -272,31 +278,32 @@ fn main() {
     date_file.push("date_file");
 
     let last_session = get_last_session(&date_file);
-    let formatted_last_session = last_session.format(START_END_FORMAT).to_string().yellow();
-
-    let sacct_output = if args.day {
-        call_sacct(FORMAT_CMD, "00:00", &args.user)
+    let now = Local::now().naive_local();
+    let window_start = if let Some(since) = args.since.as_deref() {
+        NaiveDateTime::parse_from_str(since, INPUT_DATE_FORMAT)
+            .expect("unable to parse --since with expected format")
+    } else if let Some(hours) = args.hours {
+        now - chrono::Duration::hours(hours)
+    } else if let Some(days) = args.days {
+        now - chrono::Duration::days(days)
+    } else if args.day {
+        now - chrono::Duration::days(1)
     } else {
-        call_sacct(
-            FORMAT_CMD,
-            &last_session.format(INPUT_DATE_FORMAT).to_string(),
-            &args.user,
-        )
+        last_session
     };
+    let formatted_window_start = window_start.format(START_END_FORMAT).to_string().yellow();
+
+    let sacct_output = call_sacct(FORMAT_CMD, window_start, &args.user);
     let jobs = get_finished_jobs(sacct_output);
 
     let job_messages = create_print(&jobs);
 
     if !job_messages.is_empty() {
-        if args.day {
-            println!("{}", "Jobs completed today:".bold().underline());
-        } else {
-            println!(
-                "{} {}",
-                "Jobs completed since last session:".bold().underline(),
-                formatted_last_session
-            );
-        }
+        println!(
+            "{} {}",
+            "Jobs completed since:".bold().underline(),
+            formatted_window_start
+        );
 
         let mut headers = String::with_capacity(32);
         for header in FORMAT_CMD {
@@ -321,7 +328,7 @@ fn main() {
         println!(
             "{} {}",
             "No jobs have finished since".bold().underline(),
-            formatted_last_session
+            formatted_window_start
         );
     }
 
