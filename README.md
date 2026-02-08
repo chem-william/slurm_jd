@@ -1,4 +1,6 @@
 # slurm_jd
+![License](https://img.shields.io/badge/license-MIT-blue)
+
 A small program to list finished jobs on a SLURM queue system
 
 Does not seem to play well with SLURM arrays (as in, does not list them)
