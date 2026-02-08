@@ -52,8 +52,12 @@ struct Args {
     days: Option<i64>,
 
     /// SLURM username
-    #[clap(short, long, default_value = "williamb")]
+    #[clap(short, long, default_value_t = default_user())]
     user: String,
+}
+
+fn default_user() -> String {
+    std::env::var("USER").expect("expected default user to be available")
 }
 
 #[derive(Debug)]
