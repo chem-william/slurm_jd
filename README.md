@@ -1,6 +1,6 @@
 # slurm_jd
 ![License](https://img.shields.io/badge/license-MIT-blue)
-[![Build status](https://img.shields.io/github/actions/workflow/status/chem-william/slurm_jd/ci.yml?label=Build%20status)](https://github.com/chem-william/slurm_jd/actions/workflows/ci.yml)
+[![Build status](https://img.shields.io/github/actions/workflow/status/chem-william/slurm_jd/check.yml?label=Build%20status)](https://github.com/chem-william/slurm_jd/actions/workflows/check.yml)
 
 A small program to list finished jobs on a SLURM queue system
 
