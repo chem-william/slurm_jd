@@ -25,6 +25,7 @@ const FORMAT_CMD: [&str; 7] = [
 ];
 const N_CMDS: usize = FORMAT_CMD.len();
 const WIDTH: usize = 24;
+const SKIP_STATES: [&str; 2] = ["PENDING", "CANCELLED+"];
 
 #[non_exhaustive]
 #[derive(PartialEq, Debug)]
@@ -186,9 +187,8 @@ fn get_finished_jobs(sacct_output: &str) -> Vec<Job> {
 
 fn create_print(jobs: &Vec<Job>) -> Vec<String> {
     let mut job_messages: Vec<_> = Vec::with_capacity(32);
-    let skip_states = ["PENDING", "CANCELLED+"];
     for job in jobs {
-        if !skip_states.iter().any(|&x| job.state == x) {
+        if !SKIP_STATES.iter().any(|&x| job.state == x) {
             let jobid = job.jobid;
             let jobname = &job.jobname;
             let alloccpus = job.alloccpus;
