@@ -37,9 +37,19 @@ pub enum JobType {
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
 struct Args {
-    /// Get finished jobs from the last 24h
-    #[clap(long)]
+    /// Get finished jobs from the last 24 hours
+    #[clap(long, conflicts_with_all = ["since", "hours", "days"])]
     day: bool,
+
+    /// Get finished jobs since a specific time (YYYY-MM-DDTHH:MM:SS)
+    #[clap(long, value_name = "YYYY-MM-DDTHH:MM:SS", conflicts_with_all = ["hours", "days"])]
+    since: Option<String>,
+
+    /// Get finished jobs from othe last N hours
+    hours: Option<i64>,
+
+    /// Get finished jobs from the last N days
+    days: Option<i64>,
 
     /// SLURM username
     #[clap(short, long, default_value = "williamb")]
