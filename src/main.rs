@@ -10,7 +10,6 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::str;
 
-const JOBID_LENGTH: usize = 7;
 const INPUT_DATE_FORMAT: &str = "%Y-%m-%dT%H:%M:%S";
 const LOG_DATE_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
 const START_END_FORMAT: &str = "%b-%d %H:%M";
@@ -28,11 +27,28 @@ const WIDTH: usize = 24;
 const SKIP_STATES: [&str; 2] = ["PENDING", "CANCELLED+"];
 
 #[non_exhaustive]
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone, Copy)]
 pub enum JobType {
     SingularJob,
     ArrayJob,
     NotJob,
+}
+
+#[derive(Debug, PartialEq)]
+enum ParsedJobId<'a> {
+    Singular(&'a str),
+    Array(&'a str),
+    NotJob,
+}
+
+impl<'a> ParsedJobId<'a> {
+    fn job_type(&self) -> JobType {
+        match self {
+            ParsedJobId::Singular(_) => JobType::SingularJob,
+            ParsedJobId::Array(_) => JobType::ArrayJob,
+            ParsedJobId::NotJob => JobType::NotJob,
+        }
+    }
 }
 
 #[derive(Parser, Debug)]
@@ -132,18 +148,29 @@ fn call_sacct(format_cmd: [&str; 7], window_start: NaiveDateTime, user: &str) ->
     }
 }
 
-fn check_job(line: &str, jobid_length: usize) -> JobType {
-    match line {
-        l if l.len() <= jobid_length => JobType::NotJob,
-        l if l.contains('_') && l.split('_').next().unwrap_or("").parse::<usize>().is_err() => {
-            JobType::NotJob
-        }
-        l if l.contains('_') && l.split('_').all(|s| s.parse::<usize>().is_ok()) => {
-            JobType::ArrayJob
-        }
-        l if l.parse::<usize>().is_ok() => JobType::SingularJob,
-        _ => JobType::NotJob,
+fn check_job(line: &str) -> ParsedJobId<'_> {
+    // if we can split the jobid by '.' that means we some noise from SLURM
+    let (base, suffix) = match line.split_once('.') {
+        Some((head, tail)) => (head, Some(tail)),
+        None => (line, None),
+    };
+    if suffix.is_some() {
+        return ParsedJobId::NotJob;
     }
+
+    if let Some((job_base, array_index)) = base.split_once('_') {
+        if
+        // !array_index.contains('_') &&
+        job_base.parse::<usize>().is_ok() && array_index.parse::<usize>().is_ok() {
+            return ParsedJobId::Array(job_base);
+        }
+        return ParsedJobId::NotJob;
+    }
+    if base.parse::<usize>().is_ok() {
+        return ParsedJobId::Singular(base);
+    }
+
+    ParsedJobId::NotJob
 }
 
 fn gather_jobinfo<'a>(split_output: &'a [&'a str]) -> [&'a str; N_CMDS] {
@@ -158,25 +185,27 @@ fn get_finished_jobs(sacct_output: &str) -> Vec<Job> {
     let split_output: Vec<_> = sacct_output.split_whitespace().collect();
 
     for (idx, line) in split_output.iter().enumerate() {
-        let job_type = check_job(line, JOBID_LENGTH);
-        match job_type {
-            JobType::SingularJob => {
-                let tmp_job = gather_jobinfo(&split_output[idx..(N_CMDS + idx)]);
+        let parsed_jobid = check_job(line);
+        match parsed_jobid {
+            ParsedJobId::Singular(base_jobid) => {
+                let mut tmp_job = gather_jobinfo(&split_output[idx..(N_CMDS + idx)]);
+                tmp_job[0] = base_jobid;
+
                 let job = Job::parse_job(&tmp_job, INPUT_DATE_FORMAT);
                 if job.state != "RUNNING" {
                     jobs.push(job);
                 }
             }
-            JobType::ArrayJob => {
+            ParsedJobId::Array(base_jobid) => {
                 let mut tmp_job = gather_jobinfo(&split_output[idx..(N_CMDS + idx)]);
-                tmp_job[0] = tmp_job[0].split('_').next().unwrap();
+                tmp_job[0] = base_jobid;
                 let job = Job::parse_job(&tmp_job, INPUT_DATE_FORMAT);
 
                 if job.state != "RUNNING" {
                     jobs.push(job);
                 }
             }
-            JobType::NotJob => {}
+            ParsedJobId::NotJob => {}
         }
     }
 
@@ -345,7 +374,7 @@ mod tests {
             #[test]
             fn $name() {
                 let (input, expected) = $value;
-                assert_eq!(expected, check_job(input, JOBID_LENGTH));
+                assert_eq!(expected, check_job(input).job_type());
             }
     )*
         }
@@ -358,6 +387,11 @@ mod tests {
         check_job4: ("39122024_16+", JobType::NotJob),
         check_job5: ("39122024_16", JobType::ArrayJob),
         check_job6: ("39122024", JobType::SingularJob),
+        check_job7: ("56938944_10.batch", JobType::NotJob),
+        check_job8: ("56938944_10.extern", JobType::NotJob),
+        check_job9: ("56938944_10", JobType::ArrayJob),
+        check_job10: ("56938942.batch", JobType::NotJob),
+
     }
 
     macro_rules! parse_job_tests {
