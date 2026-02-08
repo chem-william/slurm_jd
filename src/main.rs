@@ -25,6 +25,7 @@ const FORMAT_CMD: [&str; 7] = [
 ];
 const N_CMDS: usize = FORMAT_CMD.len();
 const WIDTH: usize = 24;
+const SKIP_STATES: [&str; 2] = ["PENDING", "CANCELLED+"];
 
 #[non_exhaustive]
 #[derive(PartialEq, Debug)]
@@ -108,7 +109,7 @@ impl Job {
 }
 
 fn convert_to_string(input_bytes: Vec<u8>) -> String {
-    String::from_utf8(input_bytes).unwrap_or_else(|e| panic!("Invalid UTF-8 sequence: {}", e))
+    String::from_utf8(input_bytes).unwrap_or_else(|e| panic!("Invalid UTF-8 sequence: {e}"))
 }
 
 fn call_sacct(format_cmd: [&str; 7], window_start: NaiveDateTime, user: &str) -> String {
@@ -152,7 +153,7 @@ fn gather_jobinfo<'a>(split_output: &'a [&'a str]) -> [&'a str; N_CMDS] {
     tmp_job
 }
 
-fn get_finished_jobs(sacct_output: String) -> Vec<Job> {
+fn get_finished_jobs(sacct_output: &str) -> Vec<Job> {
     let mut jobs: Vec<Job> = Vec::new();
     let split_output: Vec<_> = sacct_output.split_whitespace().collect();
 
@@ -163,7 +164,7 @@ fn get_finished_jobs(sacct_output: String) -> Vec<Job> {
                 let tmp_job = gather_jobinfo(&split_output[idx..(N_CMDS + idx)]);
                 let job = Job::parse_job(&tmp_job, INPUT_DATE_FORMAT);
                 if job.state != "RUNNING" {
-                    jobs.push(job)
+                    jobs.push(job);
                 }
             }
             JobType::ArrayJob => {
@@ -172,11 +173,11 @@ fn get_finished_jobs(sacct_output: String) -> Vec<Job> {
                 let job = Job::parse_job(&tmp_job, INPUT_DATE_FORMAT);
 
                 if job.state != "RUNNING" {
-                    jobs.push(job)
+                    jobs.push(job);
                 }
             }
-            JobType::NotJob => continue,
-        };
+            JobType::NotJob => {}
+        }
     }
 
     // skip the first job as it's erroneously reported by SLURM
@@ -186,9 +187,8 @@ fn get_finished_jobs(sacct_output: String) -> Vec<Job> {
 
 fn create_print(jobs: &Vec<Job>) -> Vec<String> {
     let mut job_messages: Vec<_> = Vec::with_capacity(32);
-    let skip_states = ["PENDING", "CANCELLED+"];
     for job in jobs {
-        if !skip_states.iter().any(|&x| job.state == x) {
+        if !SKIP_STATES.iter().any(|&x| job.state == x) {
             let jobid = job.jobid;
             let jobname = &job.jobname;
             let alloccpus = job.alloccpus;
@@ -219,12 +219,12 @@ fn create_print(jobs: &Vec<Job>) -> Vec<String> {
     job_messages
 }
 
-fn log_jobs(jobs: Vec<Job>, log_file: PathBuf) -> Result<()> {
+fn log_jobs(jobs: Vec<Job>, log_file: &PathBuf) -> Result<()> {
     // let mut fd = File::create(&log_file).expect("unable to open log_file");
     let mut fd = OpenOptions::new()
         .create(true)
         .append(true)
-        .open(&log_file)
+        .open(log_file)
         .context("Failed to open log file")?;
     for job in jobs {
         writeln!(
@@ -236,8 +236,8 @@ fn log_jobs(jobs: Vec<Job>, log_file: PathBuf) -> Result<()> {
     Ok(())
 }
 
-fn save_date(date_file: PathBuf) {
-    let mut fd = File::create(&date_file).expect("unable to open log_file");
+fn save_date(date_file: &PathBuf) {
+    let mut fd = File::create(date_file).expect("unable to open log_file");
     if date_file.exists() {
         write!(fd, "{}", Local::now().naive_local().format(LOG_DATE_FORMAT))
             .expect("unable to write date to date_file");
@@ -294,17 +294,22 @@ fn main() {
     let formatted_window_start = window_start.format(START_END_FORMAT).to_string().yellow();
 
     let sacct_output = call_sacct(FORMAT_CMD, window_start, &args.user);
-    let jobs = get_finished_jobs(sacct_output);
+    let jobs = get_finished_jobs(&sacct_output);
 
     let job_messages = create_print(&jobs);
 
-    if !job_messages.is_empty() {
+    if job_messages.is_empty() {
+        println!(
+            "{} {}",
+            "No jobs have finished since".bold().underline(),
+            formatted_window_start
+        );
+    } else {
         println!(
             "{} {}",
             "Jobs completed since:".bold().underline(),
             formatted_window_start
         );
-
         let mut headers = String::with_capacity(32);
         for header in FORMAT_CMD {
             let tmp = match header {
@@ -319,21 +324,15 @@ fn main() {
             };
             headers.push_str(&tmp);
         }
-        println!("{}", headers);
+        println!("{headers}");
 
         for job in job_messages {
-            println!("{}", job);
+            println!("{job}");
         }
-    } else {
-        println!(
-            "{} {}",
-            "No jobs have finished since".bold().underline(),
-            formatted_window_start
-        );
     }
 
-    log_jobs(jobs, log_file).unwrap();
-    save_date(date_file);
+    log_jobs(jobs, &log_file).unwrap();
+    save_date(&date_file);
 }
 
 #[cfg(test)]
