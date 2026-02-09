@@ -6,7 +6,7 @@ use std::fs;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::prelude::*;
-use std::path::PathBuf;
+use std::path::Path;
 use std::process::Command;
 use std::str;
 
@@ -26,30 +26,11 @@ const N_CMDS: usize = FORMAT_CMD.len();
 const WIDTH: usize = 24;
 const SKIP_STATES: [&str; 2] = ["PENDING", "CANCELLED+"];
 
-#[non_exhaustive]
-#[derive(PartialEq, Debug, Clone, Copy)]
-pub enum JobType {
-    SingularJob,
-    ArrayJob,
-    NotJob,
-}
-
 #[derive(Debug, PartialEq)]
 enum ParsedJobId {
     Singular(usize),
     Array { base: usize, index: usize },
     NotJob,
-}
-
-impl ParsedJobId {
-    #[cfg(test)]
-    fn job_type(&self) -> JobType {
-        match self {
-            ParsedJobId::Singular(_) => JobType::SingularJob,
-            ParsedJobId::Array { .. } => JobType::ArrayJob,
-            ParsedJobId::NotJob => JobType::NotJob,
-        }
-    }
 }
 
 #[derive(Parser, Debug)]
@@ -131,6 +112,10 @@ impl Job {
         }
     }
 
+    fn is_displayable(&self) -> bool {
+        !SKIP_STATES.iter().any(|&x| self.state == x)
+    }
+
     fn jobid_display(&self) -> String {
         if let Some(idx) = self.array_index {
             format!("{}_{}", self.jobid_base, idx)
@@ -138,10 +123,6 @@ impl Job {
             self.jobid_base.to_string()
         }
     }
-}
-
-fn convert_to_string(input_bytes: Vec<u8>) -> String {
-    String::from_utf8(input_bytes).unwrap_or_else(|e| panic!("Invalid UTF-8 sequence: {e}"))
 }
 
 fn call_sacct(format_cmd: [&str; 7], window_start: NaiveDateTime, user: &str) -> String {
@@ -157,11 +138,12 @@ fn call_sacct(format_cmd: [&str; 7], window_start: NaiveDateTime, user: &str) ->
         .output()
         .expect("failed to execute process");
 
-    if output.status.success() {
-        convert_to_string(output.stdout)
+    let bytes = if output.status.success() {
+        output.stdout
     } else {
-        convert_to_string(output.stderr)
-    }
+        output.stderr
+    };
+    String::from_utf8(bytes).unwrap_or_else(|e| panic!("Invalid UTF-8 sequence: {e}"))
 }
 
 fn check_job(line: &str) -> ParsedJobId {
@@ -183,34 +165,20 @@ fn check_job(line: &str) -> ParsedJobId {
     ParsedJobId::NotJob
 }
 
-fn gather_jobinfo<'a>(split_output: &'a [&'a str]) -> [&'a str; N_CMDS] {
-    let mut tmp_job: [&str; N_CMDS] = [""; N_CMDS];
-    tmp_job[..N_CMDS].copy_from_slice(split_output);
-
-    tmp_job
-}
-
 fn get_finished_jobs(sacct_output: &str) -> Vec<Job> {
     let mut jobs: Vec<Job> = Vec::new();
     let split_output: Vec<_> = sacct_output.split_whitespace().collect();
 
     for chunked_lines in split_output.chunks(N_CMDS) {
         let parsed_jobid = check_job(chunked_lines[0]);
-        let tmp_job = gather_jobinfo(chunked_lines);
-        match parsed_jobid {
-            ParsedJobId::Singular(base_id) => {
-                let job = Job::parse_job(base_id, None, &tmp_job, INPUT_DATE_FORMAT);
-                if job.state != "RUNNING" {
-                    jobs.push(job);
-                }
-            }
-            ParsedJobId::Array { base, index } => {
-                let job = Job::parse_job(base, Some(index), &tmp_job, INPUT_DATE_FORMAT);
-                if job.state != "RUNNING" {
-                    jobs.push(job);
-                }
-            }
-            ParsedJobId::NotJob => {}
+        let (base_id, array_index) = match parsed_jobid {
+            ParsedJobId::Singular(id) => (id, None),
+            ParsedJobId::Array { base, index } => (base, Some(index)),
+            ParsedJobId::NotJob => continue,
+        };
+        let job = Job::parse_job(base_id, array_index, chunked_lines, INPUT_DATE_FORMAT);
+        if job.state != "RUNNING" {
+            jobs.push(job);
         }
     }
 
@@ -248,7 +216,7 @@ fn create_print(jobs: &[Job]) -> Vec<String> {
     let mut i = 0;
     while i < jobs.len() {
         let job = &jobs[i];
-        if SKIP_STATES.iter().any(|&x| job.state == x) {
+        if !job.is_displayable() {
             i += 1;
             continue;
         }
@@ -261,7 +229,7 @@ fn create_print(jobs: &[Job]) -> Vec<String> {
             let start = i;
             let mut has_printable = false;
             while i < jobs.len() && jobs[i].jobid_base == base && jobs[i].array_index.is_some() {
-                if !SKIP_STATES.iter().any(|&x| jobs[i].state == x) {
+                if jobs[i].is_displayable() {
                     has_printable = true;
                 }
                 i += 1;
@@ -278,7 +246,7 @@ fn create_print(jobs: &[Job]) -> Vec<String> {
 
                 // Indented child lines
                 for child in &jobs[start..i] {
-                    if !SKIP_STATES.iter().any(|&x| child.state == x) {
+                    if child.is_displayable() {
                         let child_id = format!("{}", child.array_index.unwrap());
                         job_messages.push(format_job_line(&child_id, child, "  "));
                     }
@@ -294,8 +262,7 @@ fn create_print(jobs: &[Job]) -> Vec<String> {
     job_messages
 }
 
-fn log_jobs(jobs: Vec<Job>, log_file: &PathBuf) -> Result<()> {
-    // let mut fd = File::create(&log_file).expect("unable to open log_file");
+fn log_jobs(jobs: &[Job], log_file: &Path) -> Result<()> {
     let mut fd = OpenOptions::new()
         .create(true)
         .append(true)
@@ -317,15 +284,13 @@ fn log_jobs(jobs: Vec<Job>, log_file: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-fn save_date(date_file: &PathBuf) {
-    let mut fd = File::create(date_file).expect("unable to open log_file");
-    if date_file.exists() {
-        write!(fd, "{}", Local::now().naive_local().format(LOG_DATE_FORMAT))
-            .expect("unable to write date to date_file");
-    }
+fn save_date(date_file: &Path) {
+    let mut fd = File::create(date_file).expect("unable to open date_file");
+    write!(fd, "{}", Local::now().naive_local().format(LOG_DATE_FORMAT))
+        .expect("unable to write date to date_file");
 }
 
-fn get_last_session(date_file: &PathBuf) -> NaiveDateTime {
+fn get_last_session(date_file: &Path) -> NaiveDateTime {
     if date_file.exists() {
         let contents = fs::read_to_string(date_file).expect("unable to read date file");
         if contents.is_empty() {
@@ -412,7 +377,7 @@ fn main() {
         }
     }
 
-    log_jobs(jobs, &log_file).unwrap();
+    log_jobs(&jobs, &log_file).unwrap();
     save_date(&date_file);
 }
 
@@ -426,24 +391,23 @@ mod tests {
             #[test]
             fn $name() {
                 let (input, expected) = $value;
-                assert_eq!(expected, check_job(input).job_type());
+                assert_eq!(expected, check_job(input));
             }
     )*
         }
     }
     jobtypes_tests! {
-        check_job0: ("39122024_15+", JobType::NotJob),
-        check_job1: ("39122024_3.1", JobType::NotJob),
-        check_job2: ("39122024.1", JobType::NotJob),
-        check_job3: ("39122024.1+", JobType::NotJob),
-        check_job4: ("39122024_16+", JobType::NotJob),
-        check_job5: ("39122024_16", JobType::ArrayJob),
-        check_job6: ("39122024", JobType::SingularJob),
-        check_job7: ("56938944_10.batch", JobType::NotJob),
-        check_job8: ("56938944_10.extern", JobType::NotJob),
-        check_job9: ("56938944_10", JobType::ArrayJob),
-        check_job10: ("56938942.batch", JobType::NotJob),
-
+        check_job0: ("39122024_15+", ParsedJobId::NotJob),
+        check_job1: ("39122024_3.1", ParsedJobId::NotJob),
+        check_job2: ("39122024.1", ParsedJobId::NotJob),
+        check_job3: ("39122024.1+", ParsedJobId::NotJob),
+        check_job4: ("39122024_16+", ParsedJobId::NotJob),
+        check_job5: ("39122024_16", ParsedJobId::Array { base: 39122024, index: 16 }),
+        check_job6: ("39122024", ParsedJobId::Singular(39122024)),
+        check_job7: ("56938944_10.batch", ParsedJobId::NotJob),
+        check_job8: ("56938944_10.extern", ParsedJobId::NotJob),
+        check_job9: ("56938944_10", ParsedJobId::Array { base: 56938944, index: 10 }),
+        check_job10: ("56938942.batch", ParsedJobId::NotJob),
     }
 
     macro_rules! parse_job_tests {
