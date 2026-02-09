@@ -152,7 +152,6 @@ fn call_sacct(format_cmd: [&str; 7], window_start: NaiveDateTime, user: &str) ->
             "-n",
             "-S",
             &window_start.format(INPUT_DATE_FORMAT).to_string(),
-            "--format=JobID%20,JobName,Partition,Account,ReqCPUS,State,ExitCode",
         ])
         .arg(format!("--format={}", format_cmd.join(",")))
         .output()
@@ -197,16 +196,15 @@ fn get_finished_jobs(sacct_output: &str) -> Vec<Job> {
 
     for chunked_lines in split_output.chunks(N_CMDS) {
         let parsed_jobid = check_job(chunked_lines[0]);
+        let tmp_job = gather_jobinfo(chunked_lines);
         match parsed_jobid {
             ParsedJobId::Singular(base_id) => {
-                let tmp_job = gather_jobinfo(chunked_lines);
                 let job = Job::parse_job(base_id, None, &tmp_job, INPUT_DATE_FORMAT);
                 if job.state != "RUNNING" {
                     jobs.push(job);
                 }
             }
             ParsedJobId::Array { base, index } => {
-                let tmp_job = gather_jobinfo(chunked_lines);
                 let job = Job::parse_job(base, Some(index), &tmp_job, INPUT_DATE_FORMAT);
                 if job.state != "RUNNING" {
                     jobs.push(job);
@@ -216,8 +214,6 @@ fn get_finished_jobs(sacct_output: &str) -> Vec<Job> {
         }
     }
 
-    // skip the first job as it's erroneously reported by SLURM
-    // jobs.into_iter().skip(1).collect()
     jobs
 }
 
