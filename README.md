@@ -8,8 +8,49 @@ A small program to list finished jobs on a SLURM queue system
 
 ## Installation
 
+### Quick install (recommended)
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/chem-william/slurm_jd/main/install.sh | bash
+```
+
+The script downloads the latest release to `~/.local/bin/`, checks your `PATH`,
+and optionally sets up a login hook and alias (see [Setup](#setup) below).
+
+### Download release manually
+
+Grab the latest tarball from the
+[Releases page](https://github.com/chem-william/slurm_jd/releases/latest),
+extract it, and place the `jobs_done` binary somewhere on your `PATH`:
+
+```sh
+tar -xzf jobs_done-*.tar.gz
+install -m 755 jobs_done-*/jobs_done ~/.local/bin/
+```
+
+### Build from source
+
+Requires the [Rust toolchain](https://rustup.rs/):
+
 ```sh
 cargo install --git https://github.com/chem-william/slurm_jd
+```
+
+## Setup
+
+The install script can configure these for you automatically. To set them up
+manually, add the following to your shell config files:
+
+**Show finished jobs on login** — add to `~/.bash_profile`:
+
+```sh
+jobs_done
+```
+
+**Quick shortcut for the last 24 hours** — add to `~/.bashrc`:
+
+```sh
+alias jd="jobs_done --day"
 ```
 
 ## Usage
