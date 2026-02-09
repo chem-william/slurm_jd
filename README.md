@@ -4,8 +4,6 @@
 
 A small program to list finished jobs on a SLURM queue system
 
-Does not seem to play well with SLURM arrays (as in, does not list them)
-
 ## Contributing
 
 Contributions are welcome! Open a pull request to fix a bug, or [open an issue][]
