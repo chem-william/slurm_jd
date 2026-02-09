@@ -53,6 +53,10 @@ struct Args {
     /// SLURM username
     #[clap(short, long, default_value_t = default_user())]
     user: String,
+
+    /// Filter output to only show jobs with these states (e.g. FAILED, COMPLETED, TIMEOUT)
+    #[clap(short, long, value_name = "STATE")]
+    state: Vec<String>,
 }
 
 fn default_user() -> String {
@@ -83,21 +87,21 @@ impl Job {
         array_index: Option<usize>,
         lines: &[&str],
         date_format: &str,
-    ) -> Self {
-        Job {
+    ) -> Result<Self> {
+        Ok(Job {
             jobid_base,
             array_index,
             jobname: lines[1].to_string(),
             alloccpus: lines[2]
                 .parse::<usize>()
-                .expect("could not parse alloccpus"),
+                .context("could not parse alloccpus")?,
             elapsed: lines[3].to_string(),
             start: match lines[4] {
                 // placeholder value as the job is not yet (UNKNOWN)/was never (NONE) started
                 "Unknown" | "None" => None,
                 _ => Some(
                     NaiveDateTime::parse_from_str(lines[4], date_format)
-                        .expect("unable to parse start"),
+                        .context("unable to parse start")?,
                 ),
             },
             end: match lines[5] {
@@ -105,11 +109,11 @@ impl Job {
                 "Unknown" => None,
                 _ => Some(
                     NaiveDateTime::parse_from_str(lines[5], date_format)
-                        .expect("unable to parse end"),
+                        .context("unable to parse end")?,
                 ),
             },
             state: lines[6].to_string(),
-        }
+        })
     }
 
     fn is_displayable(&self) -> bool {
@@ -125,7 +129,7 @@ impl Job {
     }
 }
 
-fn call_sacct(format_cmd: [&str; 7], window_start: NaiveDateTime, user: &str) -> String {
+fn call_sacct(format_cmd: [&str; 7], window_start: NaiveDateTime, user: &str) -> Result<String> {
     let output = Command::new("sacct")
         .args([
             "-u",
@@ -136,14 +140,14 @@ fn call_sacct(format_cmd: [&str; 7], window_start: NaiveDateTime, user: &str) ->
         ])
         .arg(format!("--format={}", format_cmd.join(",")))
         .output()
-        .expect("failed to execute process");
+        .context("failed to execute sacct")?;
 
     let bytes = if output.status.success() {
         output.stdout
     } else {
         output.stderr
     };
-    String::from_utf8(bytes).unwrap_or_else(|e| panic!("Invalid UTF-8 sequence: {e}"))
+    String::from_utf8(bytes).context("sacct output contained invalid UTF-8")
 }
 
 fn check_job(line: &str) -> ParsedJobId {
@@ -165,7 +169,7 @@ fn check_job(line: &str) -> ParsedJobId {
     ParsedJobId::NotJob
 }
 
-fn get_finished_jobs(sacct_output: &str) -> Vec<Job> {
+fn get_finished_jobs(sacct_output: &str) -> Result<Vec<Job>> {
     let mut jobs: Vec<Job> = Vec::new();
     let split_output: Vec<_> = sacct_output.split_whitespace().collect();
 
@@ -176,13 +180,13 @@ fn get_finished_jobs(sacct_output: &str) -> Vec<Job> {
             ParsedJobId::Array { base, index } => (base, Some(index)),
             ParsedJobId::NotJob => continue,
         };
-        let job = Job::parse_job(base_id, array_index, chunked_lines, INPUT_DATE_FORMAT);
+        let job = Job::parse_job(base_id, array_index, chunked_lines, INPUT_DATE_FORMAT)?;
         if job.state != "RUNNING" {
             jobs.push(job);
         }
     }
 
-    jobs
+    Ok(jobs)
 }
 
 fn format_job_line(jobid: &str, job: &Job, indent: &str) -> String {
@@ -284,50 +288,51 @@ fn log_jobs(jobs: &[Job], log_file: &Path) -> Result<()> {
     Ok(())
 }
 
-fn save_date(date_file: &Path) {
-    let mut fd = File::create(date_file).expect("unable to open date_file");
+fn save_date(date_file: &Path) -> Result<()> {
+    let mut fd = File::create(date_file).context("unable to open date_file")?;
     write!(fd, "{}", Local::now().naive_local().format(LOG_DATE_FORMAT))
-        .expect("unable to write date to date_file");
+        .context("unable to write date to date_file")?;
+    Ok(())
 }
 
-fn get_last_session(date_file: &Path) -> NaiveDateTime {
+fn get_last_session(date_file: &Path) -> Result<NaiveDateTime> {
     if date_file.exists() {
-        let contents = fs::read_to_string(date_file).expect("unable to read date file");
+        let contents = fs::read_to_string(date_file).context("unable to read date file")?;
         if contents.is_empty() {
-            let mut file = File::create(date_file).expect("Unable to create new prev_job");
+            let mut file = File::create(date_file).context("unable to create new prev_job")?;
             let now = Local::now().naive_local();
             write!(file, "{}", now.format(LOG_DATE_FORMAT))
-                .expect("unable to write date to empty date_file");
-            now
+                .context("unable to write date to empty date_file")?;
+            Ok(now)
         } else {
             NaiveDateTime::parse_from_str(&contents, LOG_DATE_FORMAT)
-                .expect("unable to parse date from date_file")
+                .context("unable to parse date from date_file")
         }
     } else {
         let now = Local::now().naive_local();
-        NaiveDateTime::new(
+        Ok(NaiveDateTime::new(
             now.date(),
             NaiveTime::from_hms_milli_opt(0, 0, 0, 0).unwrap(),
-        )
+        ))
     }
 }
 
-fn main() {
+fn main() -> Result<()> {
     let args = Args::parse();
 
-    let mut log_file = std::env::current_exe().expect("could not acquire log file");
+    let mut log_file = std::env::current_exe().context("could not acquire log file")?;
     log_file.pop();
     log_file.push("log_file");
 
-    let mut date_file = std::env::current_exe().expect("could not acquire date file");
+    let mut date_file = std::env::current_exe().context("could not acquire date file")?;
     date_file.pop();
     date_file.push("date_file");
 
-    let last_session = get_last_session(&date_file);
+    let last_session = get_last_session(&date_file)?;
     let now = Local::now().naive_local();
     let window_start = if let Some(since) = args.since.as_deref() {
         NaiveDateTime::parse_from_str(since, INPUT_DATE_FORMAT)
-            .expect("unable to parse --since with expected format")
+            .context("unable to parse --since with expected format")?
     } else if let Some(hours) = args.hours {
         now - chrono::Duration::hours(hours)
     } else if let Some(days) = args.days {
@@ -339,8 +344,15 @@ fn main() {
     };
     let formatted_window_start = window_start.format(START_END_FORMAT).to_string().yellow();
 
-    let sacct_output = call_sacct(FORMAT_CMD, window_start, &args.user);
-    let jobs = get_finished_jobs(&sacct_output);
+    let sacct_output = call_sacct(FORMAT_CMD, window_start, &args.user)?;
+    let jobs = get_finished_jobs(&sacct_output)?;
+
+    let jobs = if args.state.is_empty() {
+        jobs
+    } else {
+        let states: Vec<String> = args.state.iter().map(|s| s.to_uppercase()).collect();
+        jobs.into_iter().filter(|j| states.contains(&j.state)).collect()
+    };
 
     let job_messages = create_print(&jobs);
 
@@ -377,8 +389,9 @@ fn main() {
         }
     }
 
-    log_jobs(&jobs, &log_file).unwrap();
-    save_date(&date_file);
+    log_jobs(&jobs, &log_file)?;
+    save_date(&date_file)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -416,7 +429,7 @@ mod tests {
             #[test]
             fn $name() {
                 let (jobid_base, array_index, input, expected) = $value;
-                let job = Job::parse_job(jobid_base, array_index, &input, INPUT_DATE_FORMAT);
+                let job = Job::parse_job(jobid_base, array_index, &input, INPUT_DATE_FORMAT).unwrap();
                 assert_eq!(expected.jobid_base, job.jobid_base);
                 assert_eq!(expected.array_index, job.array_index);
                 assert_eq!(expected.jobname, job.jobname);
@@ -488,7 +501,7 @@ mod tests {
             56938944_2.batch batch 2 00:01:00 2023-04-22T16:15:05 2023-04-22T16:16:05 COMPLETED \
             56938944_2.extern extern 2 00:01:00 2023-04-22T16:15:05 2023-04-22T16:16:05 COMPLETED";
 
-        let jobs = get_finished_jobs(sacct_output);
+        let jobs = get_finished_jobs(sacct_output).unwrap();
         assert_eq!(jobs.len(), 3);
 
         // First job: singular
@@ -532,5 +545,47 @@ mod tests {
             state: "COMPLETED".to_string(),
         };
         assert_eq!(array.jobid_display(), "12345678_10");
+    }
+
+    #[test]
+    fn filter_jobs_by_state() {
+        let sacct_output = "\
+            56938942 CompletedJob 2 00:01:00 2023-04-22T16:15:05 2023-04-22T16:16:05 COMPLETED \
+            56938942.batch batch 2 00:01:00 2023-04-22T16:15:05 2023-04-22T16:16:05 COMPLETED \
+            56938943 FailedJob 4 00:05:00 2023-04-22T16:15:05 2023-04-22T16:20:05 FAILED \
+            56938943.batch batch 4 00:05:00 2023-04-22T16:15:05 2023-04-22T16:20:05 FAILED \
+            56938944 TimedOutJob 8 01:00:00 2023-04-22T16:15:05 2023-04-22T17:15:05 TIMEOUT \
+            56938944.batch batch 8 01:00:00 2023-04-22T16:15:05 2023-04-22T17:15:05 TIMEOUT";
+
+        let jobs = get_finished_jobs(sacct_output).unwrap();
+        assert_eq!(jobs.len(), 3);
+
+        // Filter to only FAILED
+        let states = vec!["FAILED".to_string()];
+        let filtered: Vec<_> = jobs.into_iter().filter(|j| states.contains(&j.state)).collect();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].jobname, "FailedJob");
+        assert_eq!(filtered[0].state, "FAILED");
+
+        // Filter with case-insensitive input (uppercase normalization)
+        let jobs = get_finished_jobs(sacct_output).unwrap();
+        let states: Vec<String> = vec!["failed".to_string(), "timeout".to_string()]
+            .iter()
+            .map(|s| s.to_uppercase())
+            .collect();
+        let filtered: Vec<_> = jobs.into_iter().filter(|j| states.contains(&j.state)).collect();
+        assert_eq!(filtered.len(), 2);
+        assert_eq!(filtered[0].state, "FAILED");
+        assert_eq!(filtered[1].state, "TIMEOUT");
+
+        // Empty filter shows all
+        let jobs = get_finished_jobs(sacct_output).unwrap();
+        let states: Vec<String> = Vec::new();
+        let filtered: Vec<_> = if states.is_empty() {
+            jobs
+        } else {
+            jobs.into_iter().filter(|j| states.contains(&j.state)).collect()
+        };
+        assert_eq!(filtered.len(), 3);
     }
 }
