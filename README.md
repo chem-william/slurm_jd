@@ -31,7 +31,7 @@ jobs_done --since 2025-01-01T00:00:00
 jobs_done --state FAILED
 jobs_done --state FAILED --state TIMEOUT
 
-# Query a specific user
+# Use as a specific user other than the default (which is your OS username)
 jobs_done -u <username>
 ```
 
