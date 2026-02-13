@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use chrono::prelude::*;
 use clap::Parser;
 use colored::Colorize;
@@ -57,6 +57,10 @@ struct Args {
     /// Filter output to only show jobs with these states (e.g. FAILED, COMPLETED, TIMEOUT)
     #[clap(short, long, value_name = "STATE")]
     state: Vec<String>,
+
+    /// Show the working directory of a job given its job ID
+    #[clap(short, long, value_name = "jobid")]
+    workdir: Option<String>,
 }
 
 fn default_user() -> String {
@@ -126,6 +130,28 @@ impl Job {
         } else {
             self.jobid_base.to_string()
         }
+    }
+}
+
+/// Gets the working directory of a job given its jobid
+fn get_workdir(jobid: &str) -> Result<String> {
+    let output = Command::new("sacct")
+        .args(["-n", "-P", "-j", jobid])
+        .arg("--format=workdir%170")
+        .output()
+        .context("failed to execute sacct")?;
+    let bytes = if output.status.success() {
+        output.stdout
+    } else {
+        output.stderr
+    };
+    let sacct_output = String::from_utf8(bytes).context("sacct output contained invalid UTF-8")?;
+
+    let trimmed_output = sacct_output.trim();
+    if trimmed_output.is_empty() {
+        Err(anyhow!("Couldn't find working directory for job {jobid}"))
+    } else {
+        Ok(trimmed_output.to_string())
     }
 }
 
@@ -319,6 +345,12 @@ fn get_last_session(date_file: &Path) -> Result<NaiveDateTime> {
 
 fn main() -> Result<()> {
     let args = Args::parse();
+
+    if let Some(jobid) = args.workdir.as_deref() {
+        let workdir_job = get_workdir(jobid)?;
+        println!("workdir: {workdir_job}");
+        return Ok(());
+    }
 
     let mut log_file = std::env::current_exe().context("could not acquire log file")?;
     log_file.pop();
