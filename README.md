@@ -74,6 +74,9 @@ jobs_done --state FAILED --state TIMEOUT
 
 # Use as a specific user other than the default (which is your OS username)
 jobs_done -u <username>
+
+# Get the working directory of job given its jobid
+jobs_done --workdir <jobid>
 ```
 
 ## Contributing
