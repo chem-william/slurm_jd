@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use chrono::prelude::*;
 use clap::Parser;
 use colored::Colorize;
@@ -134,7 +134,7 @@ impl Job {
 }
 
 /// Gets the working directory of a job given its jobid
-fn get_workdir(jobid: &str) -> Result<String> {
+fn get_workdir(jobid: &str) -> Result<Vec<String>> {
     let output = Command::new("sacct")
         .args(["-n", "-P", "-j", jobid])
         .arg("--format=workdir%170")
@@ -147,12 +147,12 @@ fn get_workdir(jobid: &str) -> Result<String> {
     };
     let sacct_output = String::from_utf8(bytes).context("sacct output contained invalid UTF-8")?;
 
-    let trimmed_output = sacct_output.trim();
-    if trimmed_output.is_empty() {
-        Err(anyhow!("Couldn't find working directory for job {jobid}"))
-    } else {
-        Ok(trimmed_output.to_string())
-    }
+    Ok(sacct_output
+        .lines()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect())
 }
 
 fn call_sacct(format_cmd: [&str; 7], window_start: NaiveDateTime, user: &str) -> Result<String> {
@@ -347,8 +347,15 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     if let Some(jobid) = args.workdir.as_deref() {
-        let workdir_job = get_workdir(jobid)?;
-        println!("workdir: {workdir_job}");
+        let workdirs = get_workdir(jobid)?;
+        if workdirs.len() == 1 {
+            println!("Workdir: {}", workdirs[0]);
+        } else {
+            println!("Workdirs for job arrays:");
+            for p in workdirs {
+                println!("{p}");
+            }
+        }
         return Ok(());
     }
 
