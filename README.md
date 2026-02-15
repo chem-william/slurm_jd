@@ -11,7 +11,8 @@ A small program to list finished jobs on a SLURM queue system
 ### Quick install (recommended)
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/chem-william/slurm_jd/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/chem-william/slurm_jd/main/install.sh -o install.sh
+bash install.sh
 ```
 
 The script downloads the latest release to `~/.local/bin/`, checks your `PATH`,
