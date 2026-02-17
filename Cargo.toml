@@ -1,6 +1,6 @@
 [package]
 name = "jobs_done"
-version = "0.2.0"
+version = "0.2.2"
 edition = "2021"
 license = "MIT"
 
@@ -10,7 +10,7 @@ license = "MIT"
 chrono = "0.4.43"
 colored = "3.1.1"
 anyhow = "1.0.101"
-clap = { version = "4.5.57", features = ["derive"] }
+clap = { version = "4.5.59", features = ["derive"] }
 
 [profile.release]
 lto = "fat"
