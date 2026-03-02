@@ -100,3 +100,6 @@ will be accepted under the same license.
 ## Authors
 
 * [William Bro-Jørgensen](https://github.com/chem-william)
+
+## Acknowledgements
+Parts of this code has been generated with large language models (LLMs) such as Claude Opus 4.6.
