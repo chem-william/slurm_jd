@@ -1,7 +1,8 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use chrono::prelude::*;
 use clap::Parser;
 use colored::Colorize;
+use std::collections::HashSet;
 use std::fs;
 use std::fs::File;
 use std::fs::OpenOptions;
@@ -92,6 +93,13 @@ impl Job {
         lines: &[&str],
         date_format: &str,
     ) -> Result<Self> {
+        if lines.len() != N_CMDS {
+            bail!(
+                "malformed sacct row: expected {N_CMDS} fields, got {}",
+                lines.len()
+            );
+        }
+
         Ok(Job {
             jobid_base,
             array_index,
@@ -198,8 +206,9 @@ fn check_job(line: &str) -> ParsedJobId {
 fn get_finished_jobs(sacct_output: &str) -> Result<Vec<Job>> {
     let mut jobs: Vec<Job> = Vec::new();
     let split_output: Vec<_> = sacct_output.split_whitespace().collect();
+    let mut chunks = split_output.chunks_exact(N_CMDS);
 
-    for chunked_lines in split_output.chunks(N_CMDS) {
+    for chunked_lines in &mut chunks {
         let parsed_jobid = check_job(chunked_lines[0]);
         let (base_id, array_index) = match parsed_jobid {
             ParsedJobId::Singular(id) => (id, None),
@@ -210,6 +219,14 @@ fn get_finished_jobs(sacct_output: &str) -> Result<Vec<Job>> {
         if job.state != "RUNNING" {
             jobs.push(job);
         }
+    }
+
+    let remainder = chunks.remainder();
+    if !remainder.is_empty() {
+        bail!(
+            "malformed sacct output: expected groups of {N_CMDS} fields, got trailing fields: {}",
+            remainder.join(" ")
+        );
     }
 
     Ok(jobs)
@@ -386,10 +403,10 @@ fn main() -> Result<()> {
     let sacct_output = call_sacct(FORMAT_CMD, window_start, &args.user)?;
     let jobs = get_finished_jobs(&sacct_output)?;
 
-    let jobs = if args.state.is_empty() {
+    let states: HashSet<String> = args.state.iter().map(|s| s.to_uppercase()).collect();
+    let jobs = if states.is_empty() {
         jobs
     } else {
-        let states: Vec<String> = args.state.iter().map(|s| s.to_uppercase()).collect();
         jobs.into_iter()
             .filter(|j| states.contains(&j.state))
             .collect()
@@ -602,7 +619,7 @@ mod tests {
         assert_eq!(jobs.len(), 3);
 
         // Filter to only FAILED
-        let states = vec!["FAILED".to_string()];
+        let states = ["FAILED".to_string()];
         let filtered: Vec<_> = jobs
             .into_iter()
             .filter(|j| states.contains(&j.state))
@@ -613,7 +630,7 @@ mod tests {
 
         // Filter with case-insensitive input (uppercase normalization)
         let jobs = get_finished_jobs(sacct_output).unwrap();
-        let states: Vec<String> = vec!["failed".to_string(), "timeout".to_string()]
+        let states: HashSet<String> = ["failed".to_string(), "timeout".to_string()]
             .iter()
             .map(|s| s.to_uppercase())
             .collect();
@@ -627,7 +644,7 @@ mod tests {
 
         // Empty filter shows all
         let jobs = get_finished_jobs(sacct_output).unwrap();
-        let states: Vec<String> = Vec::new();
+        let states: HashSet<String> = HashSet::new();
         let filtered: Vec<_> = if states.is_empty() {
             jobs
         } else {
