@@ -386,15 +386,11 @@ fn main() -> Result<()> {
     let formatted_window_start = window_start.format(START_END_FORMAT).to_string().yellow();
 
     let sacct_output = call_sacct(FORMAT_CMD, window_start, &args.user)?;
-    let jobs = get_finished_jobs(&sacct_output)?;
+    let mut jobs = get_finished_jobs(&sacct_output)?;
 
-    let jobs = if args.state.is_empty() {
-        jobs
-    } else {
-        let states: Vec<String> = args.state.iter().map(|s| s.to_uppercase()).collect();
-        jobs.into_iter()
-            .filter(|j| states.contains(&j.state))
-            .collect()
+    if !args.state.is_empty() {
+        let states: Vec<_> = args.state.iter().map(|s| s.to_uppercase()).collect();
+        jobs.retain(|j| states.contains(&j.state));
     };
 
     let job_messages = create_print(&jobs);
