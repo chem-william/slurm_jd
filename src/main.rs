@@ -22,6 +22,15 @@ const FORMAT_CMD: [&str; 7] = [
     "end",
     "state",
 ];
+const HEADERS: [&str; N_CMDS] = [
+    "Job ID          ",
+    "Job Name                ", // 24 wide, matches WIDTH
+    "CPUs   ",
+    "Elapsed       ",
+    "Start         ",
+    "End            ",
+    "State    ",
+];
 const N_CMDS: usize = FORMAT_CMD.len();
 const WIDTH: usize = 24;
 const SKIP_STATES: [&str; 2] = ["PENDING", "CANCELLED+"];
@@ -402,20 +411,7 @@ fn main() -> Result<()> {
             "Jobs completed since:".bold().underline(),
             formatted_window_start
         );
-        let mut headers = String::with_capacity(32);
-        for header in FORMAT_CMD {
-            let tmp = match header {
-                "alloccpus" => "CPUs   ".bold().to_string(),
-                "jobid%20" => "Job ID          ".bold().to_string(),
-                "elapsed" => "Elapsed       ".bold().to_string(),
-                "start" => "Start         ".bold().to_string(),
-                "end" => "End            ".bold().to_string(),
-                "state" => "State    ".bold().to_string(),
-                "jobname%30" => format!("{:WIDTH$}", "Job Name".bold()),
-                _ => panic!("got unexpected header state: {header}"),
-            };
-            headers.push_str(&tmp);
-        }
+        let headers: String = HEADERS.iter().map(|h| h.bold().to_string()).collect();
         println!("{headers}");
 
         for job in job_messages {
