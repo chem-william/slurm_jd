@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use chrono::prelude::*;
 use clap::Parser;
 use colored::Colorize;
@@ -391,7 +391,7 @@ fn main() -> Result<()> {
     if !args.state.is_empty() {
         let states: Vec<_> = args.state.iter().map(|s| s.to_uppercase()).collect();
         jobs.retain(|j| states.contains(&j.state));
-    };
+    }
 
     let job_messages = create_print(&jobs);
 
